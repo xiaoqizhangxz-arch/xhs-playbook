@@ -1,0 +1,199 @@
+{
+  "_meta": {
+    "source": "xhs_official_courses_6429_kos",
+    "version": "1.0"
+  },
+  "global": {
+    "recent_note_median_views": {
+      "p25": 500,
+      "p50": 1500,
+      "p75": 5000
+    },
+    "cover_ctr": {
+      "p25": 0.025,
+      "p50": 0.045,
+      "p75": 0.07
+    },
+    "engagement_rate": {
+      "p25": 0.02,
+      "p50": 0.04,
+      "p75": 0.065
+    },
+    "completion_rate": {
+      "p25": 0.2,
+      "p50": 0.35,
+      "p75": 0.55
+    },
+    "search_ctr": {
+      "p25": 0.02,
+      "p50": 0.05,
+      "p75": 0.1
+    },
+    "shop_visit_to_pay_cvr": {
+      "p25": 0.008,
+      "p50": 0.018,
+      "p75": 0.035
+    },
+    "product_click_to_pay_cvr": {
+      "p25": 0.03,
+      "p50": 0.08,
+      "p75": 0.15
+    },
+    "aov": {
+      "p25": 80,
+      "p50": 200,
+      "p75": 500
+    },
+    "repurchase_rate": {
+      "p25": 0.05,
+      "p50": 0.12,
+      "p75": 0.25
+    },
+    "recent_note_count_30d": {
+      "p25": 4,
+      "p50": 12,
+      "p75": 25
+    }
+  },
+  "by_stage": {
+    "cold_start": {
+      "cover_ctr": {
+        "p50": 0.03
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.01
+      },
+      "recent_note_median_views": {
+        "p50": 600
+      }
+    },
+    "ramp_up": {
+      "cover_ctr": {
+        "p50": 0.04
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.018
+      },
+      "recent_note_median_views": {
+        "p50": 1500
+      }
+    },
+    "breakthrough": {
+      "cover_ctr": {
+        "p50": 0.055
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.025
+      },
+      "recent_note_median_views": {
+        "p50": 4000
+      }
+    },
+    "burst": {
+      "cover_ctr": {
+        "p50": 0.065
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.032
+      },
+      "recent_note_median_views": {
+        "p50": 10000
+      }
+    },
+    "daily_ops": {
+      "cover_ctr": {
+        "p50": 0.045
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.02
+      },
+      "repurchase_rate": {
+        "p50": 0.15
+      }
+    }
+  },
+  "by_business_model": {
+    "ecommerce": {
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.018
+      },
+      "product_click_to_pay_cvr": {
+        "p50": 0.08
+      }
+    },
+    "store_live": {
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.03
+      },
+      "completion_rate": {
+        "p50": 0.4
+      }
+    },
+    "content": {
+      "engagement_rate": {
+        "p50": 0.05
+      },
+      "cover_ctr": {
+        "p50": 0.048
+      }
+    },
+    "private_domain": {
+      "repurchase_rate": {
+        "p50": 0.2
+      }
+    }
+  },
+  "by_industry": {
+    "珠宝配饰": {
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.013,
+        "note": "珠宝信任决策周期长，转化率低于平均"
+      },
+      "aov": {
+        "p50": 280
+      }
+    },
+    "服饰": {
+      "cover_ctr": {
+        "p50": 0.055,
+        "note": "服饰封面竞争激烈"
+      },
+      "repurchase_rate": {
+        "p50": 0.1
+      }
+    },
+    "美妆": {
+      "search_ctr": {
+        "p50": 0.06
+      },
+      "engagement_rate": {
+        "p50": 0.048
+      }
+    },
+    "食品饮料": {
+      "repurchase_rate": {
+        "p50": 0.22,
+        "note": "食品复购率高于平均"
+      },
+      "aov": {
+        "p50": 120
+      }
+    },
+    "母婴": {
+      "engagement_rate": {
+        "p50": 0.055
+      },
+      "shop_visit_to_pay_cvr": {
+        "p50": 0.02
+      }
+    },
+    "家居家装": {
+      "aov": {
+        "p50": 800
+      },
+      "search_ctr": {
+        "p50": 0.055
+      }
+    }
+  }
+}
