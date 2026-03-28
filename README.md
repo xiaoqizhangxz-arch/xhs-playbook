@@ -20,7 +20,7 @@ Revenue OS 把 6,400+ 条小红书官方课程知识与你的真实账号数据�
 
 ```bash
 # 1. 安装
-pip install revenue-os
+pip install xhs-playbook
 
 # 2. 初始化（约5分钟）
 /intake
