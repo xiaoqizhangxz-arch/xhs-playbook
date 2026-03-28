@@ -22,3 +22,4 @@ build/
 
 # iCloud
 *.icloud
+revenue_os/acquisition/_daemon_exec.mjs
