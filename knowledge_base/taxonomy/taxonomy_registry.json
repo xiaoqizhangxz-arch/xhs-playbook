@@ -1,0 +1,9 @@
+{
+  "role": ["blogger", "merchant", "brand", "lead_gen", "hybrid"],
+  "business_model": ["content", "ecommerce", "store_live", "live", "search", "ads", "lead_gen", "private_domain"],
+  "objective": ["followers_growth", "exposure", "store_visit", "conversion", "roi", "gmv", "repurchase", "lead_capture"],
+  "stage": ["cold_start", "ramp_up", "breakthrough", "burst", "campaign", "daily_ops"],
+  "scenario": ["pre_live", "in_live", "post_live", "note_optimization", "ads_optimization", "store_acceptance", "audience_insight"],
+  "evidence_strength": ["official_rule", "official_course", "case_experience", "campaign_strategy"],
+  "time_attribute": ["evergreen", "seasonal", "campaign-specific", "deprecated"]
+}

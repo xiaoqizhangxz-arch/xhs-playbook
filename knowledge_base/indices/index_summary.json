@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-03-28T00:48:45+00:00",
+  "doc_count": 6429,
+  "layer_counts": {
+    "canonical_sessions": 306,
+    "knowledge_objects": 6429,
+    "dimensions": {
+      "data_analytics": 739,
+      "traffic_acquisition": 1582,
+      "account_operation": 771,
+      "livestream": 350,
+      "product_strategy": 458,
+      "industry_cases": 246,
+      "brand_positioning": 390,
+      "conversion_path": 534,
+      "platform_rules": 500,
+      "content_creation": 859
+    }
+  },
+  "vocab_size": 671713
+}
