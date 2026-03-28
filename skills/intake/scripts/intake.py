@@ -70,7 +70,7 @@ def _ask_float(prompt: str) -> float | None:
 
 def run_intake() -> None:
     print("\n" + "="*55)
-    print("  Revenue OS /intake — 品牌配置（约5分钟）")
+    print("  XHS Playbook /intake — 品牌配置（约5分钟）")
     print("="*55)
 
     responses: dict = {}

@@ -67,7 +67,7 @@ def run_brief() -> None:
     }
 
     lines = [
-        "# Revenue OS 本周执行简报",
+        "# XHS Playbook 本周执行简报",
         f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"主攻方向：**{MISSION_CN.get(mission, mission)}**",
         "",
@@ -97,7 +97,7 @@ def run_brief() -> None:
             "",
         ]
 
-    lines += ["*由 Revenue OS KB（6,429条官方课程知识）+ 贝叶斯指标建模生成*"]
+    lines += ["*由 XHS Playbook KB（6,429条官方课程知识）+ 贝叶斯指标建模生成*"]
     report = "\n".join(lines)
 
     print(report)

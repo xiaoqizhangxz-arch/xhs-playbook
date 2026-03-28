@@ -1,4 +1,4 @@
-# Revenue OS 系统架构
+# XHS Playbook 系统架构
 
 ```
 /intake → brand_profile.yaml

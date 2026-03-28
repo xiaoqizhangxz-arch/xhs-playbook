@@ -45,7 +45,7 @@ def _cold_start_report(user_state: dict, top_kos: list) -> str:
     ind_hint = INDUSTRY_PAIN_POINTS.get(ind, INDUSTRY_PAIN_POINTS.get("通用", {}))
 
     lines = [
-        "# Revenue OS 账号诊断报告（冷启动模式）",
+        "# XHS Playbook 账号诊断报告（冷启动模式）",
         f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "",
         "## 数据状态",
@@ -89,7 +89,7 @@ def _full_report(health: dict, user_state: dict, top_kos: list) -> str:
     DIM_CN = {"traffic":"流量","engagement":"互动","conversion":"转化","revenue":"变现","activity":"活跃度"}
 
     lines = [
-        "# Revenue OS 账号诊断报告",
+        "# XHS Playbook 账号诊断报告",
         f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}  |  数据覆盖：{health['data_coverage']}",
         "",
         f"## 健康总分：{total}/100  {status(total)}",

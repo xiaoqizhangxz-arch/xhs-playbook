@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "revenue-os"
+name = "xhs-playbook"
 version = "0.1.0"
-description = "AI-powered Xiaohongshu growth advisor — knowledge-driven diagnosis and weekly briefs"
+description = "XHS Playbook — AI-powered growth advisor for Xiaohongshu creators. Powered by 6,400+ knowledge objects from XHS official courses & livestreams."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"

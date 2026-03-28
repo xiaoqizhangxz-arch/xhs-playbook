@@ -1,7 +1,7 @@
 # /intake — 品牌配置
 
 ## 描述
-首次使用 Revenue OS 时运行，填写品牌问卷，生成 `brand_profile.yaml`。
+首次使用 XHS Playbook 时运行，填写品牌问卷，生成 `brand_profile.yaml`。
 
 ## 触发
 用户输入 `/intake`
