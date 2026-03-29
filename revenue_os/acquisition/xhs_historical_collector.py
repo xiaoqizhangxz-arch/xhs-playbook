@@ -194,23 +194,43 @@ def collect_ark_page_for_period(tab_id: int, path: str, label: str,
 # ── 主采集函数 ────────────────────────────────────────────────────────────────
 
 # 千帆页面配置：(路径, 标签, 最小粒度, 是否有自定义日期)
+# URL 探测日期：2026-03-28（通过侧边栏点击逐一确认）
 ARK_PAGES = [
-    ('/app-datacenter/business-overview', '成交分析',   'day', True),
-    ('/app-datacenter/flow-overview',     '流量数据',   'day', True),
-    ('/app-datacenter/good-data',         '商品总览',   'day', True),
-    ('/app-datacenter/search-overview',   '搜索总览',   'day', True),
-    ('/app-datacenter/search-overview/words', '引流搜索词', 'day', True),
-    ('/app-datacenter/business-account',  '账号分析',   'day', True),
-    ('/app-datacenter/note-data/goods',   '笔记数据',   'day', True),
-    ('/app-datacenter/homepage',          '店铺主页',   'day', True),
-    ('/app-datacenter/comment-overview',  '评价数据',   'day', True),
-    ('/app-datacenter/business-order',    '订单明细',   'day', True),
-    ('/app-datacenter/logistics-data',    '物流数据',   'day', True),
-    ('/app-datacenter/customer-data',     '客服数据',   'week', True),
-    ('/app-datacenter/group-chat',        '群聊数据',   'day', True),
-    # 人群分析页（成交分析→更多人群分析，window.open 跳转至此）
-    # 无日期筛选，每次采集当前快照（用户资产/分层/画像）
-    ('/app-circle/user-data',             '人群分析',   'none', False),
+    # ── 交易数据 ──────────────────────────────────────────────
+    ('/app-datacenter/business-overview', '成交分析',     'day',  True),
+    ('/app-datacenter/business-account',  '账号分析',     'day',  True),
+    ('/app-datacenter/business-refund',   '退款分析',     'day',  True),
+    ('/app-datacenter/business-order',    '订单明细',     'day',  True),
+    ('/app-datacenter/business-cps',      '买手分析',     'day',  True),
+    # ── 流量 ─────────────────────────────────────────────────
+    ('/app-datacenter/overview',          '数据总览',     'day',  True),
+    ('/app-datacenter/flow-overview',     '流量数据',     'day',  True),
+    # ── 商品 ─────────────────────────────────────────────────
+    ('/app-datacenter/good-data',         '商品总览',     'day',  True),
+    ('/app-datacenter/good-data/real-time',          '实时商品数据', 'day', True),
+    ('/app-datacenter/good-data/category-analysis',  '商家类目',    'day', True),
+    # ── 搜索 ─────────────────────────────────────────────────
+    ('/app-datacenter/search-overview',        '搜索总览',   'day', True),
+    ('/app-datacenter/search-overview/words',  '引流搜索词', 'day', True),
+    # ── 笔记 ─────────────────────────────────────────────────
+    ('/app-datacenter/note-data/goods',   '笔记数据',     'day',  True),
+    ('/app-datacenter/note-cooperate',    '买手笔记',     'day',  True),
+    ('/app-datacenter/note-blue-chain',   '笔记蓝链',     'day',  True),
+    # ── 店铺 / 服务 ──────────────────────────────────────────
+    ('/app-datacenter/homepage',          '店铺主页',     'day',  True),
+    ('/app-datacenter/comment-overview',  '评价数据',     'day',  True),
+    ('/app-datacenter/after-sale',        '售后数据',     'day',  True),
+    ('/app-datacenter/logistics-data',    '物流数据',     'day',  True),
+    ('/app-datacenter/customer-data',     '客服数据',     'week', True),
+    ('/app-datacenter/group-chat',        '群聊数据',     'day',  True),
+    ('/app-datacenter/live-goods',        '买手清单',     'day',  True),
+    # ── 市场 ─────────────────────────────────────────────────
+    ('/app-datacenter/market/note-rank',  '市场行情',     'day',  True),
+    # ── 用户分析（快照，无日期筛选）──────────────────────────────
+    # 人群分层 6tab×3subtab，由 collect_user_pages.mjs 处理
+    ('/app-circle/user-data',             '人群分析',     'none', False),
+    # AINRL 5tab×2subtab + 笔记详情，由 collect_user_pages.mjs 处理
+    ('/app-promotion/user-assets',        'AINRL用户资产', 'none', False),
 ]
 
 def run_historical(start_date: date, end_date: date) -> dict[str, Any]:
