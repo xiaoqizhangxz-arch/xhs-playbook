@@ -234,3 +234,29 @@ Content-Type: application/json
 - [opencli 文档](https://github.com/jackwener/opencli)
 - 千帆 URL: https://ark.xiaohongshu.com/app-datacenter/business-overview
 - Obsidian Vault: `~/Library/Mobile Documents/com~apple~CloudDocs/Thoth_Academy_Obsidian/Revenue OS/`
+
+---
+
+## 附：人群分析隐秘入口（2026-03-28 发现）
+
+**路径**：成交分析 → 人群构成 → 查看更多人群分析（`window.open` 触发）
+
+**URL**：`https://ark.xiaohongshu.com/app-circle/user-data`
+
+**内容**：
+- 用户资产总量（含近30日新增）
+- 用户分层：认知 / 意向 / 新客 / 老客 / 流失 / 粉丝 / 群聊
+- 人群流转图
+- 用户画像
+- 策略推荐
+
+**采集方式**：无日期筛选，每次采集当前快照。加入 `ARK_PAGES` 后 `has_custom=False`，走 `collect_ark_page_snapshot()`。
+
+**示例数据（2026-03-28）**：
+```
+用户资产: 26,125（近30日+7,699）
+认知: 15,994（近30日+5,309）
+意向: 9,995（近30日+2,325）
+新客: 123（近30日+61）
+老客: 13（近30日+4）
+```
