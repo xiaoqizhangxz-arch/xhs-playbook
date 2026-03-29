@@ -40,7 +40,9 @@ xhs_historical_collector.py — 千帆 ARK 历史数据全量采集
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import tempfile
 import time
 import argparse
 from datetime import datetime, date, timedelta, timezone
@@ -114,37 +116,233 @@ def date_segments(start: date, end: date, max_days: int = 90) -> list[tuple[date
         cur = seg_end + timedelta(days=1)
     return segments
 
-# ── 千帆自定义日期设置 ────────────────────────────────────────────────────────
+# ── 千帆自定义日期设置（playwright headless，支持跨月）───────────────────────
+# Node.js 脚本路径
+_DATE_SETTER_JS = REVENUE_OS_ROOT / "scripts" / "revenue_os" / "acquisition" / "_ark_date_setter.js"
+
+def _ensure_date_setter_mjs() -> None:
+    """写出 headless playwright 日期设置脚本（首次调用时）"""
+    if _DATE_SETTER_JS.exists():
+        return
+    script = r'''
+/**
+ * _ark_date_setter.mjs
+ * playwright headless：在千帆 ARK 页面设置自定义日期范围
+ * 用法: node _ark_date_setter.mjs <url> <start:YYYY-MM-DD> <end:YYYY-MM-DD>
+ * 输出: JSON { ok, statsTime, expected }
+ *
+ * 通过月份箭头导航 + 点击日期格子，支持跨月设置
+ */
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE);
+const fs = require('fs');
+const path = require('path');
+
+const [,, pageUrl, startDate, endDate] = process.argv;
+const [sy, sm, sd] = startDate.split('-').map(Number);
+const [ey, em, ed] = endDate.split('-').map(Number);
+
+const cookiesFile = process.env.COOKIES_JSON;
+const cookies = JSON.parse(fs.readFileSync(cookiesFile, 'utf-8'));
+
+async function getDisplayedMonths(page) {
+    const texts = await page.evaluate(function(){
+        return Array.from(document.querySelectorAll('.css-vmmof7'))
+            .filter(function(el){ return el.getBoundingClientRect().height > 0; })
+            .map(function(el){ return el.innerText.trim(); });
+    });
+    const months = [];
+    for(let i = 0; i < texts.length - 1; i++) {
+        const yM = texts[i].match(/(\d{4})/);
+        const mM = texts[i+1].match(/(\d{1,2})/);
+        if(yM && mM) months.push({ year: parseInt(yM[1]), month: parseInt(mM[1]) });
+    }
+    return months;
+}
+
+async function navigateToMonth(page, targetYear, targetMonth) {
+    for(let a = 0; a < 36; a++) {
+        const months = await getDisplayedMonths(page);
+        if(!months.length) break;
+        const left = months[0];
+        const diff = (left.year - targetYear) * 12 + (left.month - targetMonth);
+        if(diff === 0) return true;
+        const svgs = await page.evaluate(function(){
+            return Array.from(document.querySelectorAll('.css-7ll3nl')).map(function(svg){
+                var r = svg.getBoundingClientRect();
+                return { x: Math.round(r.x+r.width/2), y: Math.round(r.y+r.height/2), cls: svg.className.baseVal };
+            });
+        });
+        if(diff > 0) {
+            const prev = svgs.find(function(s){ return s.cls.indexOf('css-cvpy5t') > -1; });
+            if(prev) await page.mouse.click(prev.x, prev.y);
+        } else {
+            const next = svgs.find(function(s){ return s.cls.indexOf('css-fvvjfw') > -1; });
+            if(next) await page.mouse.click(next.x, next.y);
+        }
+        await page.waitForTimeout(400);
+    }
+    return false;
+}
+
+async function clickDay(page, day, inLeft) {
+    const cells = await page.evaluate(function(){
+        return Array.from(document.querySelectorAll('.calendar-dayCell')).map(function(c){
+            var r = c.getBoundingClientRect();
+            return { text: c.innerText.trim(), x: Math.round(r.x+r.width/2), y: Math.round(r.y+r.height/2), left: Math.round(r.x) };
+        });
+    });
+    var allXs = cells.map(function(c){ return c.left; }).sort(function(a,b){ return a-b; });
+    var midX = allXs[Math.floor(allXs.length/2)];
+    var target = cells.find(function(c){
+        return c.text === String(day) && (inLeft ? c.left < midX : c.left >= midX);
+    });
+    if(target) { await page.mouse.click(target.x, target.y); return true; }
+    return false;
+}
+
+(async () => {
+const browser = await chromium.launch({ headless: true });
+const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+await ctx.addCookies(cookies);
+const page = await ctx.newPage();
+
+await page.goto(pageUrl, { waitUntil: 'networkidle', timeout: 45000 });
+await page.waitForTimeout(3000);
+
+// Click 自定义
+await page.evaluate(function(){
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); var n;
+    while(n = w.nextNode()){ if(n.textContent.trim() === '自定义' && n.parentElement.getBoundingClientRect().height > 0){ n.parentElement.click(); return; } }
+});
+await page.waitForTimeout(1200);
+await page.locator("input[placeholder='开始时间']").first().click({ timeout: 5000 });
+await page.waitForTimeout(1200);
+
+const navOk = await navigateToMonth(page, sy, sm);
+const r1 = await clickDay(page, sd, true);
+await page.waitForTimeout(600);
+
+const months = await getDisplayedMonths(page);
+const endInLeft = months[0] && months[0].year === ey && months[0].month === em;
+const endInRight = months[1] && months[1].year === ey && months[1].month === em;
+if(!endInLeft && !endInRight) await navigateToMonth(page, ey, em > 1 ? em-1 : 12);
+const months2 = await getDisplayedMonths(page);
+const endLeft2 = months2[0] && months2[0].year === ey && months2[0].month === em;
+const r2 = await clickDay(page, ed, endLeft2);
+await page.waitForTimeout(2500);
+
+const bodyText = await page.evaluate(function(){ return document.body.innerText; });
+const m = bodyText.match(/(\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})/);
+const statsTime = m ? m[0] : '';
+const expected = startDate + '~' + endDate;
+
+process.stdout.write(JSON.stringify({ ok: statsTime === expected, statsTime, expected, navOk, r1, r2 }));
+await browser.close();
+})();
+'''
+    _DATE_SETTER_JS.write_text(script.lstrip(), encoding='utf-8')
+
+
+def _get_chrome_cookies_path() -> Path:
+    """Dump Chrome cookies to a temp file, return path."""
+    venv_python = REVENUE_OS_ROOT / "runtime" / "revenue_os" / ".tooling" / "creator_capture" / "py" / "venv" / "bin" / "python"
+    cookies_path = Path(tempfile.mktemp(suffix='_cookies.json'))
+    script = """
+import json, os, browser_cookie3
+from pathlib import Path
+cookies = []
+for c in browser_cookie3.chrome(domain_name='xiaohongshu.com'):
+    cookies.append({'name': c.name, 'value': c.value, 'domain': c.domain,
+        'path': c.path or '/', 'expires': float(c.expires) if c.expires else -1,
+        'httpOnly': bool((getattr(c,'_rest',{}) or {}).get('HttpOnly')),
+        'secure': bool(c.secure), 'sameSite': 'Lax'})
+Path(os.environ['OUTPUT_PATH']).write_text(json.dumps(cookies))
+"""
+    subprocess.run([str(venv_python), '-c', script], check=True,
+                   env={**os.environ, 'OUTPUT_PATH': str(cookies_path)})
+    return cookies_path
+
+
+_NODE_ROOT = REVENUE_OS_ROOT / "runtime" / "revenue_os" / ".tooling" / "creator_capture" / "node"
+_PLAYWRIGHT_MODULE = _NODE_ROOT / "node_modules" / "@playwright" / "test"
+
+
+def set_ark_date_range_playwright(page_url: str, start_str: str, end_str: str) -> bool:
+    """
+    Playwright headless 设置千帆 ARK 页面的自定义日期范围。
+    通过月份箭头导航 + 点击日期格子实现，完全支持跨月。
+    返回 True 表示设置成功并验证通过。
+    """
+    _ensure_date_setter_mjs()
+    cookies_path = None
+    try:
+        cookies_path = _get_chrome_cookies_path()
+        env = {
+            **os.environ,
+            'COOKIES_JSON': str(cookies_path),
+            'PLAYWRIGHT_MODULE': str(_PLAYWRIGHT_MODULE),
+            'PLAYWRIGHT_CHANNEL': '',
+        }
+        result = subprocess.run(
+            ['node', str(_DATE_SETTER_JS), page_url, start_str, end_str],
+            cwd=_NODE_ROOT, env=env,
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            print(f"      ⚠️ playwright date setter error: {result.stderr[-200:]}")
+            return False
+        data = json.loads(result.stdout.strip() or '{}')
+        if data.get('ok'):
+            print(f"      ✅ 统计时间: {data.get('statsTime')}")
+            return True
+        else:
+            print(f"      ⚠️ 日期验证失败: expected={data.get('expected')}, got={data.get('statsTime')}")
+            return False
+    except Exception as exc:
+        print(f"      ⚠️ playwright date setter exception: {exc}")
+        return False
+    finally:
+        if cookies_path and Path(cookies_path).exists():
+            Path(cookies_path).unlink(missing_ok=True)
+
+
 def set_ark_date_range(tab_id: int, start_str: str, end_str: str) -> bool:
-    """在千帆页面设置自定义日期范围，返回是否成功"""
-    # 点自定义
+    """
+    设置千帆 ARK 页面自定义日期范围（向后兼容入口）。
+    优先使用 playwright headless（支持跨月），回退到 browser bridge JS 注入。
+    """
+    # Get current page URL from browser bridge
+    try:
+        current_url = _exec(tab_id, 'location.href')
+        if isinstance(current_url, str) and 'ark.xiaohongshu.com' in current_url:
+            ok = set_ark_date_range_playwright(current_url, start_str, end_str)
+            if ok:
+                return True
+            print(f"      ⚠️ playwright 失败，回退到 JS 注入方式")
+    except Exception:
+        pass
+
+    # Fallback: JS setValue (may fail on cross-month)
     _exec(tab_id, """(function(){
-        var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
-        var n;
+        var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT); var n;
         while(n=w.nextNode()){if(n.textContent.trim()==='自定义'){n.parentElement.click();return;}}
     })()""")
     time.sleep(1.5)
-
-    # 点击开始时间 input 触发日历
     _exec(tab_id, """(function(){
         var inp=document.querySelector('input[placeholder="开始时间"]');
-        if(inp){inp.focus();inp.click();inp.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));}
+        if(inp){inp.focus();inp.click();}
     })()""")
     time.sleep(1.5)
-
-    # 设置日期
     set_code = f"""(function(){{
         var setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
         var s=document.querySelector('input[placeholder="开始时间"]');
         var e=document.querySelector('input[placeholder="截止时间"]');
-        if(s){{setter.call(s,'{start_str}');['input','change','blur'].forEach(ev=>s.dispatchEvent(new Event(ev,{{bubbles:true}})));}}
-        if(e){{setter.call(e,'{end_str}');['input','change','blur'].forEach(ev=>e.dispatchEvent(new Event(ev,{{bubbles:true}})));}}
-        return s?.value + '|' + e?.value;
+        if(s){{setter.call(s,'{start_str}');['input','change','blur'].forEach(function(ev){{s.dispatchEvent(new Event(ev,{{bubbles:true}}));}});}}
+        if(e){{setter.call(e,'{end_str}');['input','change','blur'].forEach(function(ev){{e.dispatchEvent(new Event(ev,{{bubbles:true}}));}});}}
+        return (s?s.value:'')+'|'+(e?e.value:'');
     }})()"""
-    result = _exec(tab_id, set_code)
+    _exec(tab_id, set_code)
     time.sleep(1)
-
-    # 验证统计时间已更新
     body = _exec(tab_id, 'document.body.innerText')
     if not isinstance(body, str):
         body = str(body)

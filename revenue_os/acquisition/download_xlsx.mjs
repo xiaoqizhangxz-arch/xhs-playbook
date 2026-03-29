@@ -26,14 +26,64 @@
  *   实时商品数据/售后数据/物流数据/客服数据/群聊数据/市场行情
  *
  * 用法：
- *   node download_xlsx.mjs                          # 全量下载
- *   node download_xlsx.mjs --pages=成交分析,流量数据   # 指定页面
- *   node download_xlsx.mjs --dry-run                # 验证按钮可达，不实际下载
+ *   node download_xlsx.mjs                               # 全量下载（页面默认时间窗口）
+ *   node download_xlsx.mjs --window=30d                  # 先切换到近30日再下载
+ *   node download_xlsx.mjs --window=7d                   # 先切换到近7日再下载
+ *   node download_xlsx.mjs --window=custom:2026-01-01:2026-03-28  # 自定义跨月日期
+ *   node download_xlsx.mjs --pages=成交分析,流量数据        # 指定页面
+ *   node download_xlsx.mjs --dry-run                     # 验证按钮可达，不实际下载
  */
 
 import { sendCommand } from '/opt/homebrew/lib/node_modules/@jackwener/opencli/dist/browser/daemon-client.js';
-import { readdirSync, statSync, mkdirSync, copyFileSync } from 'fs';
-import { join, basename } from 'path';
+import { readdirSync, statSync, mkdirSync, copyFileSync, existsSync } from 'fs';
+import { join, basename, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const NODE_ROOT = join(__dirname, '../../../runtime/revenue_os/.tooling/creator_capture/node');
+const PLAYWRIGHT_MODULE = join(NODE_ROOT, 'node_modules/@playwright/test');
+const DOWNLOADER_JS = join(__dirname, '_ark_xlsx_downloader.js');
+
+// ── Playwright subprocess: handles custom date range download ─────────────────
+async function playwrightDownload(pageUrl, btnText, destDir, windowArg) {
+    const cookiesPath = join(NODE_ROOT, '_tmp_cookies.json');
+    try {
+        // Dump Chrome cookies via shell (handles paths with spaces)
+        const pyScript = join(NODE_ROOT, '_cookie_dump.py');
+        const { writeFileSync: wfs } = await import('fs');
+        wfs(pyScript, `
+import json, browser_cookie3
+from pathlib import Path
+cookies = []
+for c in browser_cookie3.chrome(domain_name='xiaohongshu.com'):
+    cookies.append({'name':c.name,'value':c.value,'domain':c.domain,
+        'path':c.path or '/','expires':float(c.expires) if c.expires else -1,
+        'httpOnly':bool((getattr(c,'_rest',{}) or {}).get('HttpOnly')),
+        'secure':bool(c.secure),'sameSite':'Lax'})
+Path('${cookiesPath.replace(/'/g, "\\'")}').write_text(json.dumps(cookies))
+`);
+        // Use known absolute path to venv python (avoids path-with-spaces issues)
+        const venvPython = join(NODE_ROOT, '..', 'py', 'venv', 'bin', 'python');
+        execFileSync('/bin/sh', ['-c', `"${venvPython}" "${pyScript}"`],
+            { stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 });
+    } catch(e) {
+        return { ok: false, error: 'cookie dump failed: ' + (e.stderr?.toString().slice(-100) || e.message.slice(0, 100)) };
+    }
+
+    try {
+        const result = execFileSync('/bin/sh', ['-c',
+            `COOKIES_JSON="${cookiesPath}" PLAYWRIGHT_MODULE="${PLAYWRIGHT_MODULE}" PLAYWRIGHT_CHANNEL="" ` +
+            `node "${DOWNLOADER_JS}" "${pageUrl}" "${btnText}" "${destDir}" "${windowArg || ''}"`
+        ], { cwd: NODE_ROOT, timeout: 90000, stdio: ['pipe', 'pipe', 'pipe'] });
+        return JSON.parse(result.toString().trim() || '{}');
+    } catch(e) {
+        const stderr = e.stderr ? e.stderr.toString().slice(-300) : '';
+        const stdout = e.stdout ? e.stdout.toString().trim() : '';
+        try { return JSON.parse(stdout || '{}'); } catch(_) {}
+        return { ok: false, error: stderr || e.message.slice(0, 150) };
+    }
+}
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -44,6 +94,8 @@ const BASE_URL = 'https://ark.xiaohongshu.com';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const PAGES_FILTER = process.argv.find(a => a.startsWith('--pages='))?.slice(8)?.split(',') || null;
+// 时间窗口: --window 30d | 7d | custom:2026-01-01:2026-02-28
+const WINDOW_ARG = process.argv.find(a => a.startsWith('--window='))?.slice(9) || null;
 
 // ── 页面配置 ─────────────────────────────────────────────────────────────────
 // 格式: { path, label, btnText, destDir }
@@ -66,6 +118,220 @@ const DOWNLOAD_PAGES = [
     // 管理类
     { path: '/app-item/list/shelf',              label: '商品管理',   btnText: '导出查询结果', destDir: '售卖中商品' },
 ];
+
+// ── 日期设置函数（千帆 ARK 通用）─────────────────────────────────────────────
+// 月份文字选择器：.css-vmmof7 → "2026 年" / "03 月"
+// 前箭头(←单月): .css-cvpy5t  后箭头(→单月): .css-fvvjfw
+// 日期格子: .calendar-dayCell
+
+async function execOnTab(code) {
+    return sendCommand('exec', { code, tabId: TAB });
+}
+
+async function getDisplayedMonths() {
+    const texts = await execOnTab([
+        '(function(){',
+        '  return Array.from(document.querySelectorAll(".css-vmmof7"))',
+        '    .filter(function(el){ return el.getBoundingClientRect().height > 0; })',
+        '    .map(function(el){ return el.innerText.trim(); });',
+        '})()'
+    ].join(''));
+    const arr = Array.isArray(texts) ? texts : JSON.parse(texts || '[]');
+    const months = [];
+    for(let i = 0; i < arr.length - 1; i++) {
+        const yM = arr[i].match(/(\d{4})/);
+        const mM = arr[i+1].match(/(\d{1,2})/);
+        if(yM && mM) months.push({ year: parseInt(yM[1]), month: parseInt(mM[1]) });
+    }
+    return months;
+}
+
+async function navigateToMonth(targetYear, targetMonth) {
+    for(let a = 0; a < 36; a++) {
+        const months = await getDisplayedMonths();
+        if(!months.length) break;
+        const left = months[0];
+        const diff = (left.year - targetYear) * 12 + (left.month - targetMonth);
+        if(diff === 0) return true;
+
+        const svgs = await execOnTab([
+            '(function(){',
+            '  return Array.from(document.querySelectorAll(".css-7ll3nl")).map(function(svg){',
+            '    var r=svg.getBoundingClientRect();',
+            '    return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),cls:svg.className.baseVal};',
+            '  });',
+            '})()'
+        ].join(''));
+        const svgArr = Array.isArray(svgs) ? svgs : JSON.parse(svgs || '[]');
+        if(diff > 0) {
+            const prev = svgArr.find(function(s){ return s.cls.indexOf('css-cvpy5t') > -1; });
+            if(prev) await execOnTab([
+                '(function(){',
+                '  var svg=Array.from(document.querySelectorAll(".css-7ll3nl")).find(function(s){return s.className.baseVal.indexOf("css-cvpy5t")>-1;});',
+                '  if(!svg) return;',
+                '  var r=svg.getBoundingClientRect();',
+                '  var opts={bubbles:true,cancelable:true,view:window,clientX:r.left+r.width/2,clientY:r.top+r.height/2};',
+                '  svg.dispatchEvent(new PointerEvent("pointerdown",opts));',
+                '  svg.dispatchEvent(new MouseEvent("mousedown",opts));',
+                '  svg.dispatchEvent(new PointerEvent("pointerup",opts));',
+                '  svg.dispatchEvent(new MouseEvent("mouseup",opts));',
+                '  svg.dispatchEvent(new MouseEvent("click",opts));',
+                '})()'
+            ].join(''));
+        } else {
+            const next = svgArr.find(function(s){ return s.cls.indexOf('css-fvvjfw') > -1; });
+            if(next) await execOnTab([
+                '(function(){',
+                '  var svg=Array.from(document.querySelectorAll(".css-7ll3nl")).find(function(s){return s.className.baseVal.indexOf("css-fvvjfw")>-1;});',
+                '  if(!svg) return;',
+                '  var r=svg.getBoundingClientRect();',
+                '  var opts={bubbles:true,cancelable:true,view:window,clientX:r.left+r.width/2,clientY:r.top+r.height/2};',
+                '  svg.dispatchEvent(new PointerEvent("pointerdown",opts));',
+                '  svg.dispatchEvent(new MouseEvent("mousedown",opts));',
+                '  svg.dispatchEvent(new PointerEvent("pointerup",opts));',
+                '  svg.dispatchEvent(new MouseEvent("mouseup",opts));',
+                '  svg.dispatchEvent(new MouseEvent("click",opts));',
+                '})()'
+            ].join(''));
+        }
+        await sleep(450);
+    }
+    return false;
+}
+
+async function clickDayCell(day, inLeftCalendar) {
+    const cells = await execOnTab([
+        '(function(){',
+        '  return Array.from(document.querySelectorAll(".calendar-dayCell")).map(function(c){',
+        '    var r=c.getBoundingClientRect();',
+        '    return {text:c.innerText.trim(),x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),left:Math.round(r.x)};',
+        '  });',
+        '})()'
+    ].join(''));
+    const cellArr = Array.isArray(cells) ? cells : JSON.parse(cells || '[]');
+    if(!cellArr.length) return false;
+    // Find the separator between left/right calendars by detecting the largest gap in x values
+    var uniqueXs = cellArr.map(function(c){ return c.left; })
+        .filter(function(x,i,a){ return a.indexOf(x)===i; })
+        .sort(function(a,b){ return a-b; });
+    var maxGap = 0, midX = uniqueXs[Math.floor(uniqueXs.length/2)];
+    for(var gi=0; gi<uniqueXs.length-1; gi++) {
+        var gap = uniqueXs[gi+1] - uniqueXs[gi];
+        if(gap > maxGap) { maxGap = gap; midX = (uniqueXs[gi] + uniqueXs[gi+1]) / 2; }
+    }
+    var target = cellArr.find(function(c){
+        return c.text === String(day) && (inLeftCalendar ? c.left < midX : c.left >= midX);
+    });
+    if(target) {
+        const cx = target.x, cy = target.y;
+        await execOnTab([
+            `(function(){`,
+            `  var opts={bubbles:true,cancelable:true,view:window,clientX:${cx},clientY:${cy}};`,
+            `  var el=document.elementFromPoint(${cx},${cy});`,
+            `  if(!el){`,
+            `    var cells=Array.from(document.querySelectorAll(".calendar-dayCell"));`,
+            `    el=cells.find(function(c){return c.innerText.trim()==="${target.text}";});`,
+            `  }`,
+            `  if(el){`,
+            `    el.dispatchEvent(new PointerEvent("pointerdown",opts));`,
+            `    el.dispatchEvent(new MouseEvent("mousedown",opts));`,
+            `    el.dispatchEvent(new PointerEvent("pointerup",opts));`,
+            `    el.dispatchEvent(new MouseEvent("mouseup",opts));`,
+            `    el.dispatchEvent(new MouseEvent("click",opts));`,
+            `  }`,
+            `})()`
+        ].join(''));
+        return true;
+    }
+    return false;
+}
+
+async function clickTimeTabText(text) {
+    return execOnTab([
+        `(function(){`,
+        `  var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT); var n;`,
+        `  while(n=w.nextNode()){`,
+        `    if(n.textContent.trim()==="${text}"&&n.parentElement.getBoundingClientRect().height>0){`,
+        `      n.parentElement.click(); return true;`,
+        `    }`,
+        `  }`,
+        `  return false;`,
+        `})()`
+    ].join(''));
+}
+
+/**
+ * 设置页面时间窗口后下载
+ * windowArg: '30d' | '7d' | '1d' | 'custom:YYYY-MM-DD:YYYY-MM-DD' | null
+ */
+async function applyTimeWindow(windowArg) {
+    if(!windowArg) return { ok: true, note: 'no window, using page default' };
+    const tabMap = { '1d': '近1日', '7d': '近7日', '30d': '近30日' };
+    if(tabMap[windowArg]) {
+        await clickTimeTabText(tabMap[windowArg]);
+        await sleep(2500);
+        return { ok: true, note: `clicked ${tabMap[windowArg]}` };
+    }
+    if(windowArg.startsWith('custom:')) {
+        const parts = windowArg.split(':');
+        if(parts.length !== 3) return { ok: false, error: 'invalid custom format, use custom:YYYY-MM-DD:YYYY-MM-DD' };
+        const [, startDate, endDate] = parts;
+        const [sy, sm, sd] = startDate.split('-').map(Number);
+        const [ey, em, ed] = endDate.split('-').map(Number);
+
+        await clickTimeTabText('自定义');
+        await sleep(1200);
+
+        // Open start input to trigger calendar
+        await execOnTab([
+            '(function(){',
+            '  var inp=document.querySelector("input[placeholder=\'开始时间\']");',
+            '  if(inp){inp.focus();inp.click();}',
+            '})()'
+        ].join(''));
+        await sleep(1200);
+
+        // Navigate to start month
+        const navOk = await navigateToMonth(sy, sm);
+        if(!navOk) return { ok: false, error: `could not navigate to ${sy}/${sm}` };
+
+        // Click start day
+        const r1 = await clickDayCell(sd, true);
+        if(!r1) return { ok: false, error: `start day ${sd} not found` };
+        await sleep(600);
+
+        // Click end day — navigate so end month appears in right calendar
+        // Strategy: navigate left calendar to (endMonth - 1) so right = endMonth
+        const endTargetLeftYear = (em > 1) ? ey : ey - 1;
+        const endTargetLeftMonth = (em > 1) ? em - 1 : 12;
+        await navigateToMonth(endTargetLeftYear, endTargetLeftMonth);
+        const months2 = await getDisplayedMonths();
+        // end month should now be in right calendar (months2[1])
+        const endLeft2 = months2[0] && months2[0].year === ey && months2[0].month === em;
+        const r2 = await clickDayCell(ed, endLeft2);
+        if(!r2) return { ok: false, error: `end day ${ed} not found in calendar (months: ${JSON.stringify(months2)})` };
+        await sleep(2500);
+
+        // Close calendar (press Escape / click body) and wait for data reload
+        await execOnTab('document.body.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+        await sleep(500);
+        await execOnTab('document.body.click()');
+        await sleep(3000); // wait for data refresh
+
+        // Verify
+        const body = await execOnTab('document.body.innerText');
+        const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+        const m = bodyStr.match(/(\d{4}-\d{2}-\d{2})~(\d{4}-\d{2}-\d{2})/);
+        const statsTime = m ? m[0] : '';
+        const expected = `${startDate}~${endDate}`;
+        console.log(`  📅 验证: expected=${expected}, got=${statsTime}`);
+        const verified = statsTime === expected;
+        return { ok: verified, statsTime, expected,
+                 note: verified ? `统计时间: ${statsTime}` : null,
+                 error: verified ? null : `日期验证失败: expected ${expected}, got ${statsTime||'(empty)'}` };
+    }
+    return { ok: false, error: 'unknown window: ' + windowArg };
+}
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────────
 let TAB = null;
@@ -126,6 +392,25 @@ function moveToSourceAuto(srcPath, destDirName) {
     return destPath;
 }
 
+// ── 日期分段工具 ──────────────────────────────────────────────────────────────
+// 千帆范围选择器每次只能在不导航的情况下选定≤2个月内的日期
+// 超过2个月的范围自动切分为 ≤55天 的段（确保始终在同月或相邻月内）
+function splitDateRange(startStr, endStr, maxDays = 55) {
+    const segments = [];
+    let cur = new Date(startStr + 'T00:00:00');
+    const end = new Date(endStr + 'T00:00:00');
+    while(cur <= end) {
+        const segEnd = new Date(cur);
+        segEnd.setDate(segEnd.getDate() + maxDays - 1);
+        if(segEnd > end) segEnd.setTime(end.getTime());
+        const fmt = d => d.toISOString().slice(0, 10);
+        segments.push({ start: fmt(cur), end: fmt(segEnd) });
+        cur = new Date(segEnd);
+        cur.setDate(cur.getDate() + 1);
+    }
+    return segments;
+}
+
 // ── 主流程 ────────────────────────────────────────────────────────────────────
 console.log(`\n${'='.repeat(60)}`);
 console.log(`千帆 XLSX 下载  ${DRY_RUN ? '[DRY RUN]' : ''}`);
@@ -173,9 +458,53 @@ for (const page of pages) {
     }
 
     if (DRY_RUN) {
-        console.log(`  ✅ [DRY RUN] 找到按钮"${page.btnText}"`);
+        console.log(`  ✅ [DRY RUN] 找到按钮"${page.btnText}"${WINDOW_ARG ? '  window=' + WINDOW_ARG : ''}`);
         results.push({ label: page.label, status: 'dry_run' });
         continue;
+    }
+
+    // 自定义日期范围：playwright 全流程，自动分段（≤55天/段）
+    if (WINDOW_ARG && WINDOW_ARG.startsWith('custom:') && page.btnText === '下载数据') {
+        const parts = WINDOW_ARG.split(':');
+        if (parts.length !== 3) {
+            console.log(`  ❌ 格式错误: 应为 custom:YYYY-MM-DD:YYYY-MM-DD`);
+            results.push({ label: page.label, status: 'error' });
+            continue;
+        }
+        const [, rangeStart, rangeEnd] = parts;
+        const segments = splitDateRange(rangeStart, rangeEnd);
+        console.log(`  📅 自定义范围 ${rangeStart}~${rangeEnd}，分${segments.length}段`);
+
+        const fullDestDir = join(DEST_DIR, page.destDir);
+        mkdirSync(fullDestDir, { recursive: true });
+        let segOk = 0;
+        for (const seg of segments) {
+            const segWindow = `custom:${seg.start}:${seg.end}`;
+            console.log(`  🔄 [${seg.start}~${seg.end}] playwright 下载...`);
+            const plResult = await playwrightDownload(
+                `${BASE_URL}${page.path}`, page.btnText, fullDestDir, segWindow
+            );
+            if (plResult.ok) {
+                console.log(`  ✅ ${plResult.file}`);
+                segOk++;
+            } else {
+                console.log(`  ⚠️ 失败: ${plResult.error}`);
+            }
+            await sleep(1000);
+        }
+        results.push({ label: page.label, status: segOk === segments.length ? 'ok' : 'partial',
+                        segments: segments.length, downloaded: segOk });
+        continue;
+    }
+
+    // 简单时间 tab 或无时间设置：browser bridge 方式
+    if (WINDOW_ARG && !WINDOW_ARG.startsWith('custom:') && page.btnText === '下载数据') {
+        const wResult = await applyTimeWindow(WINDOW_ARG);
+        if (!wResult.ok) {
+            console.log(`  ⚠️ 时间窗口设置失败: ${wResult.error || WINDOW_ARG}，使用页面默认`);
+        } else {
+            console.log(`  📅 时间窗口: ${wResult.note || wResult.statsTime || WINDOW_ARG}`);
+        }
     }
 
     // 记录下载前状态
