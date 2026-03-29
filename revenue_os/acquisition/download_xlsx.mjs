@@ -1,16 +1,34 @@
 /**
- * download_xlsx.mjs
- * 千帆各数据页 XLSX 下载脚本
+ * download_xlsx.mjs — 千帆 ARK XLSX 自动下载
  *
- * 机制：点击页面"下载数据"按钮 → 浏览器直接下载到 ~/Downloads
- * 验证：2026-03-28 确认 成交分析/流量/商品/搜索/笔记/账号/退款/订单/评价/店铺/买手笔记/商家类目 均有"下载数据"
+ * 机制：导航到数据页 → 点击"下载数据"按钮 → 等待浏览器下载到 ~/Downloads → 移入 source_auto/
+ * 验证：2026-03-28 dry-run 14/14 页面按钮全部可达
  *
- * 无下载按钮的页面（实时商品/售后/物流/客服/群聊/市场行情）：这些只能 DOM 采集
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 时间窗口：⚠️ 当前下载页面默认时间窗口（待实现日期设置）
  *
- * 用法:
- *   node download_xlsx.mjs                    # 下载所有有按钮的页面
- *   node download_xlsx.mjs --pages 成交分析,流量数据  # 只下载指定页面
- *   node download_xlsx.mjs --dry-run          # 只打印不下载
+ * 千帆 ARK 数据页有时间切换 tab（近7日/近30日/自定义）。
+ * 当前脚本直接点击"下载数据"，下载的是页面当前显示的时间范围。
+ *
+ * 待实现：在下载前先调用 setDateWindow(tabId, mode)：
+ *   - mode='30d' → 点击"近30日" tab → 等待刷新 → 点下载
+ *   - mode='custom' → 设置开始/结束日期 → 点下载
+ *   跨月日历问题同 xhs_historical_collector.py（需月份导航逻辑）
+ *
+ * 临时方案：在浏览器里手动切换时间窗口后运行此脚本
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ *
+ * 有下载按钮的14个页面（source_auto/ 目标目录）：
+ *   成交分析/流量数据/商品总览/商家类目/搜索总览/引流搜索词
+ *   笔记数据/买手笔记/账号分析/退款分析/订单明细/评价数据/店铺主页/商品管理
+ *
+ * 无下载按钮（只能 DOM 采集）：
+ *   实时商品数据/售后数据/物流数据/客服数据/群聊数据/市场行情
+ *
+ * 用法：
+ *   node download_xlsx.mjs                          # 全量下载
+ *   node download_xlsx.mjs --pages=成交分析,流量数据   # 指定页面
+ *   node download_xlsx.mjs --dry-run                # 验证按钮可达，不实际下载
  */
 
 import { sendCommand } from '/opt/homebrew/lib/node_modules/@jackwener/opencli/dist/browser/daemon-client.js';

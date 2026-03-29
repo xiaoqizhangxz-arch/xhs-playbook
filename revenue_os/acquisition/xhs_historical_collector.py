@@ -1,15 +1,41 @@
 """
-xhs_historical_collector.py — 历史数据全量采集（分段，按92天限制）
+xhs_historical_collector.py — 千帆 ARK 历史数据全量采集
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 用法：
-  python3 -m revenue_os.acquisition.xhs_historical_collector
-  python3 -m revenue_os.acquisition.xhs_historical_collector --start 2025-10-01 --end 2026-03-28
+  python3 -m revenue_os.acquisition.xhs_historical_collector --start 2026-01-01 --end 2026-03-28
+  python3 -m revenue_os.acquisition.xhs_historical_collector  # 默认: 2025-10-01 → 今天
 
-工作原理：
-  1. 把时间范围按92天切割成多段
-  2. 对每段：用 JS 设置自定义日期范围 → 等待数据加载 → 读取 DOM → 保存
-  3. Creator API（30天限制）按月分段调用
-  4. Canvas 图表标记为待 Agent OCR 处理
+时间控制：
+  --start / --end  任意日期范围
+  脚本自动按 ≤90天 切段（千帆"自定义"最大窗口为92天）
+
+采集机制：
+  1. 点击页面"自定义" tab
+  2. 通过 HTMLInputElement.prototype.value setter 强制写入日期值
+  3. 触发 input/change/blur 事件让 Vue 组件识别
+  4. 等待3秒后读取 DOM 文字并保存
+
+⚠️ 已知限制 - 跨月日期设置：
+  千帆日历选择器在跨月时可能需要点击月份切换箭头。
+  当前 JS setValue 方法有时被 Vue 虚拟 DOM 绕过（验证失败时
+  打印 warning 并采集当前页数据）。
+  → 待解决：补充月份导航逻辑（检测当前月 → 点箭头 → 选日期格子）
+
+覆盖页面（23个，URL 探测日期 2026-03-28）：
+  交易: 成交分析/账号分析/退款分析/订单明细/买手分析
+  流量: 数据总览/流量数据
+  商品: 商品总览/实时商品数据/商家类目
+  搜索: 搜索总览/引流搜索词
+  笔记: 笔记数据/买手笔记/笔记蓝链
+  店铺: 店铺主页/评价数据/售后数据/物流数据/客服数据/群聊数据/买手清单
+  市场: 市场行情
+
+不在此脚本处理（由专门脚本负责）：
+  人群分析/AINRL用户资产 → collect_user_pages.mjs（快照，无日期）
+  Canvas 图表 → canvas_ocr.py（playwright PDF + Gemini OCR）
+  XLSX 下载 → download_xlsx.mjs（点击下载按钮）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 from __future__ import annotations
 
