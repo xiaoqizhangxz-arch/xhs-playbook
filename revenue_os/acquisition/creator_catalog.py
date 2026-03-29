@@ -9,6 +9,10 @@ CREATOR_HOME_URL = "https://creator.xiaohongshu.com/new/home"
 CREATOR_NOTE_MANAGER_URL = "https://creator.xiaohongshu.com/new/note-manager"
 CREATOR_EVENTS_URL = "https://creator.xiaohongshu.com/new/events"
 CREATOR_INSPIRATION_URL = "https://creator.xiaohongshu.com/new/inspiration"
+# Statistics surfaces — require date selection, canvas charts, need PDF+OCR
+CREATOR_STATS_OVERVIEW_URL = "https://creator.xiaohongshu.com/statistics/data-overview"
+CREATOR_STATS_FANS_URL = "https://creator.xiaohongshu.com/statistics/fans"
+CREATOR_STATS_CONTENT_URL = "https://creator.xiaohongshu.com/statistics/content"
 
 
 @dataclass(frozen=True)
@@ -127,6 +131,70 @@ CREATOR_SURFACES: tuple[CreatorSurfaceSpec, ...] = (
         proof_status="planned",
         selector_spec_key="creator::creator_inspiration",
         notes="Reachable, but not yet a planner-facing input surface.",
+    ),
+    # ── Statistics surfaces (canvas charts → PDF → OCR) ─────────────────────
+    # These pages use canvas-rendered charts for source distribution, fan profile, etc.
+    # Capture strategy: playwright navigates to URL, sets date range, takes large PDF,
+    # then canvas_ocr.py extracts data via Claude Vision.
+    CreatorSurfaceSpec(
+        name="creator_stats_overview",
+        route_family="creator_auto",
+        route_subdir="stats_overview",
+        export_format="pdf",
+        default_window="last_30_days",
+        cadence_modes=("weekly", "monthly"),
+        source_url=CREATOR_STATS_OVERVIEW_URL,
+        navigation_hint="创作服务平台-数据看板-内容数据",
+        expected_extensions=(".pdf", ".json"),
+        route_url=CREATOR_STATS_OVERVIEW_URL,
+        priority="P1",
+        business_role="note exposure, view source distribution (homepage/search/follow), CTR, completion rate trends",
+        capture_mode="pdf_ocr",
+        freshness_threshold_days=8,
+        blocking_severity="warning",
+        proof_status="pending",
+        selector_spec_key="creator::creator_stats_overview",
+        notes="Canvas charts: 观看来源分布 (首页推荐/搜索/关注/其他), 封面点击率趋势, 完播率趋势. Date picker needed before capture.",
+    ),
+    CreatorSurfaceSpec(
+        name="creator_stats_fans",
+        route_family="creator_auto",
+        route_subdir="stats_fans",
+        export_format="pdf",
+        default_window="last_30_days",
+        cadence_modes=("weekly", "monthly"),
+        source_url=CREATOR_STATS_FANS_URL,
+        navigation_hint="创作服务平台-数据看板-粉丝数据",
+        expected_extensions=(".pdf", ".json"),
+        route_url=CREATOR_STATS_FANS_URL,
+        priority="P1",
+        business_role="fan growth trend, fan profile (gender/age/city/interest), fan activity heatmap",
+        capture_mode="pdf_ocr",
+        freshness_threshold_days=8,
+        blocking_severity="warning",
+        proof_status="pending",
+        selector_spec_key="creator::creator_stats_fans",
+        notes="Canvas charts: 涨粉趋势, 粉丝画像(性别/年龄/城市/兴趣), 粉丝活跃时间. Corresponds to raw_data/users/粉丝数据.pdf historical data.",
+    ),
+    CreatorSurfaceSpec(
+        name="creator_stats_content",
+        route_family="creator_auto",
+        route_subdir="stats_content",
+        export_format="pdf",
+        default_window="last_30_days",
+        cadence_modes=("weekly", "monthly"),
+        source_url=CREATOR_STATS_CONTENT_URL,
+        navigation_hint="创作服务平台-数据看板-帖子数据",
+        expected_extensions=(".pdf", ".json"),
+        route_url=CREATOR_STATS_CONTENT_URL,
+        priority="P1",
+        business_role="per-note performance table, content-level source breakdown",
+        capture_mode="pdf_ocr",
+        freshness_threshold_days=8,
+        blocking_severity="warning",
+        proof_status="pending",
+        selector_spec_key="creator::creator_stats_content",
+        notes="Corresponds to raw_data/pdfs/帖子数据.pdf historical data. Canvas: note-level bar charts, source breakdown per note.",
     ),
 )
 

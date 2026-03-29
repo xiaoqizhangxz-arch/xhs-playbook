@@ -175,28 +175,42 @@ const fs = require('fs');
   await page.waitForTimeout(4000);
   let pageTurns = 0;
   if (config.enable_pagination) {{
-    for (let i = 0; i < config.max_note_pages - 1; i++) {{
-      const candidates = [
-        page.getByRole('button', {{ name: /下一页|下页|next/i }}),
-        page.locator('button:has-text(\"下一页\")'),
-        page.locator('[aria-label*=\"下一页\"]'),
-        page.locator('.ant-pagination-next'),
-      ];
-      let clicked = false;
-      for (const locator of candidates) {{
-        try {{
-          const item = locator.first();
-          if ((await item.count()) === 0) continue;
-          if (!(await item.isVisible())) continue;
-          if (await item.isDisabled()) continue;
-          await item.click({{ timeout: 2000 }});
-          clicked = true;
-          pageTurns += 1;
-          await page.waitForTimeout(1800);
-          break;
-        }} catch (error) {{}}
+    // note_manager uses infinite scroll, not pagination buttons.
+    // Strategy: scroll to bottom repeatedly and wait for new API responses.
+    let prevApiCount = apiResults.length;
+    let noNewCount = 0;
+    const MAX_SCROLLS = 40;  // safety cap: ~400 notes at 10/page
+    for (let i = 0; i < MAX_SCROLLS; i++) {{
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(2000);
+      // Also try clicking any "加载更多" button
+      try {{
+        const loadMore = page.locator('button:has-text("加载更多"), [class*="load-more"], [class*="loadMore"]').first();
+        if ((await loadMore.count()) > 0 && (await loadMore.isVisible())) {{
+          await loadMore.click({{ timeout: 1500 }});
+          await page.waitForTimeout(1500);
+        }}
+      }} catch (error) {{}}
+      const newApiCount = apiResults.filter(r => r.name === 'note_user_posted').length;
+      if (newApiCount > prevApiCount) {{
+        prevApiCount = newApiCount;
+        pageTurns += 1;
+        noNewCount = 0;
+      }} else {{
+        noNewCount += 1;
+        if (noNewCount >= 3) break;  // 3 scrolls with no new data = end of list
       }}
-      if (!clicked) break;
+      // Check if we have enough notes based on total
+      const totalNoteCount = (() => {{
+        for (const r of apiResults) {{
+          if (r.name !== 'note_user_posted') continue;
+          try {{ const d = JSON.parse(r.body); const t = d?.data?.total; if (t) return t; }} catch(e) {{}}
+        }}
+        return null;
+      }})();
+      const collectedCount = new Set(apiResults.filter(r => r.name === 'note_user_posted')
+        .flatMap(r => {{ try {{ return JSON.parse(r.body)?.data?.notes?.map(n => n.id) || []; }} catch(e) {{ return []; }} }})).size;
+      if (totalNoteCount && collectedCount >= totalNoteCount) break;
     }}
   }}
   const visualSignals = await page.evaluate(() => {{
