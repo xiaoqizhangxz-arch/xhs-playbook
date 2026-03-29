@@ -124,6 +124,35 @@ def set_ark_date_range(tab_id: int, start_str: str, end_str: str) -> bool:
         body = str(body)
     return start_str in body or start_str.replace('-', '') in body
 
+def collect_ark_page_snapshot(tab_id: int, path: str, label: str,
+                               date_str: str) -> str | None:
+    """采集无日期筛选页面的当前快照（如人群分析 /app-circle/user-data）"""
+    print(f"    [{label}] snapshot {date_str}")
+
+    current_url = _exec(tab_id, 'location.pathname')
+    if path not in (current_url or ''):
+        subprocess.run(['osascript', '-e',
+            f'tell application "Google Chrome"\n'
+            f'repeat with i from 1 to count of tabs of window 1\n'
+            f'if URL of tab i of window 1 contains "ark.xiaohongshu.com" then\n'
+            f'set URL of tab i of window 1 to "https://ark.xiaohongshu.com{path}"\n'
+            f'exit repeat\nend if\nend repeat\nend tell'],
+            capture_output=True, text=True)
+        time.sleep(8)
+
+    body = _exec(tab_id, 'document.body.innerText')
+    text = body if isinstance(body, str) else str(body)
+
+    if len(text) < 100:
+        print(f"      ⚠️ 内容过短 ({len(text)} chars)")
+        return None
+
+    save_path = HIST_DIR / f"{date_str}_snapshot_{label}.txt"
+    save_path.write_text(text, encoding='utf-8')
+    print(f"      ✅ {len(text)} chars → {save_path.name}")
+    return str(save_path)
+
+
 def collect_ark_page_for_period(tab_id: int, path: str, label: str,
                                  start_str: str, end_str: str) -> str | None:
     """采集单个千帆页面的特定时间段数据"""
@@ -179,6 +208,9 @@ ARK_PAGES = [
     ('/app-datacenter/logistics-data',    '物流数据',   'day', True),
     ('/app-datacenter/customer-data',     '客服数据',   'week', True),
     ('/app-datacenter/group-chat',        '群聊数据',   'day', True),
+    # 人群分析页（成交分析→更多人群分析，window.open 跳转至此）
+    # 无日期筛选，每次采集当前快照（用户资产/分层/画像）
+    ('/app-circle/user-data',             '人群分析',   'none', False),
 ]
 
 def run_historical(start_date: date, end_date: date) -> dict[str, Any]:
@@ -212,6 +244,18 @@ def run_historical(start_date: date, end_date: date) -> dict[str, Any]:
     for path, label, granularity, has_custom in ARK_PAGES:
         print(f"\n  ▶ {label}")
         results['pages'][label] = []
+
+        if not has_custom:
+            # 无日期筛选的页面（如人群分析）：只采集一次当前快照
+            today_str = date.today().strftime('%Y-%m-%d')
+            seg_path = collect_ark_page_snapshot(ARK_TAB, path, label, today_str)
+            if seg_path:
+                results['pages'][label].append({
+                    'period': f"snapshot_{today_str}",
+                    'file': seg_path,
+                })
+            time.sleep(2)
+            continue
 
         for seg_start, seg_end in segments:
             seg_path = collect_ark_page_for_period(
