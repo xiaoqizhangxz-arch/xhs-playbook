@@ -117,6 +117,10 @@ const DOWNLOAD_PAGES = [
     { path: '/app-datacenter/homepage',          label: '店铺主页',   btnText: '下载数据', destDir: '店铺页' },
     // 管理类
     { path: '/app-item/list/shelf',              label: '商品管理',   btnText: '导出查询结果', destDir: '售卖中商品' },
+    { path: '/app-item/list/shelf', label: '规格明细', btnText: '导出查询结果', destDir: '规格明细', preTab: '规格视图' },
+    // 笔记数据子 tab（URL 不变，需先切 tab）
+    { path: '/app-datacenter/note-data/goods', label: '商品笔记流量', btnText: '下载数据', destDir: '商品笔记流量', preTab: '商品笔记' },
+    { path: '/app-datacenter/note-data/goods', label: '商品笔记数据', btnText: '下载数据', destDir: '商品笔记数据', preTab: '普通笔记' },
 ];
 
 // ── 日期设置函数（千帆 ARK 通用）─────────────────────────────────────────────
@@ -437,6 +441,17 @@ for (const page of pages) {
         console.log('  ❌ 登录失效，跳过');
         results.push({ label: page.label, status: 'skip_login' });
         continue;
+    }
+
+    // 切换子 tab（如果需要）
+    if (page.preTab) {
+        await sendCommand('exec', { code: [
+            '(function(){',
+            '  var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);var n;',
+            `  while(n=w.nextNode()){if(n.textContent.trim()==="${page.preTab}"&&n.parentElement.getBoundingClientRect().height>0){n.parentElement.click();return;}}`,
+            '})()'
+        ].join(''), tabId: TAB });
+        await sleep(2000);
     }
 
     // 检查下载按钮
