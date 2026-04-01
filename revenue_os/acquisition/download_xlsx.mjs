@@ -89,7 +89,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── 配置 ─────────────────────────────────────────────────────────────────────
 const DOWNLOADS_DIR = `${process.env.HOME}/Downloads`;
-const DEST_DIR = `${process.env.HOME}/Library/Mobile Documents/com~apple~CloudDocs/Thoth_Academy_Obsidian/08_Le_Fond_Bridge/Business Library/raw_data/source_auto`;
+const DEST_DIR = process.env.REVENUE_OS_DATA_DIR || `${process.env.HOME}/revenue-os-data/source_auto`;
 const BASE_URL = 'https://ark.xiaohongshu.com';
 
 const DRY_RUN = process.argv.includes('--dry-run');

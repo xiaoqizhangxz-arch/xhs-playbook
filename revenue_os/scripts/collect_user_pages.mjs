@@ -21,7 +21,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── 配置 ────────────────────────────────────────────────────────────────────
 const BASE_URL = 'https://ark.xiaohongshu.com';
-const SAVE_DIR = '/Users/xiaoqizhang/Library/Mobile Documents/com~apple~CloudDocs/Thoth_Academy_Obsidian/Revenue OS/raw_data/creator_auto/historical';
+const SAVE_DIR = process.env.REVENUE_OS_DATA_DIR
+  ? `${process.env.REVENUE_OS_DATA_DIR}/creator_auto/historical`
+  : `${process.env.HOME}/revenue-os-data/creator_auto/historical`;
 const TODAY = process.argv.find(a => a.startsWith('--date='))?.slice(7) || new Date().toISOString().slice(0, 10);
 
 mkdirSync(SAVE_DIR, { recursive: true });
