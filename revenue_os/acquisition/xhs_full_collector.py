@@ -2,9 +2,8 @@
 xhs_full_collector.py — XHS 全量数据采集器
 
 采集来源：
-  - creator.xiaohongshu.com  → 创作者指标（API + DOM）
-  - ark.xiaohongshu.com      → 千帆电商数据（DOM）
-  - Canvas 图表              → 通过 canvas.toDataURL() 提取，供 Vision OCR
+  - creator.xiaohongshu.com  → 创作者指标（opencli CLI）
+  - ark.xiaohongshu.com      → 千帆电商数据（AppleScript + DOM innerText）
 
 使用方式：
   python3 -m revenue_os.acquisition.xhs_full_collector --mode full
@@ -13,9 +12,17 @@ xhs_full_collector.py — XHS 全量数据采集器
   python3 -m revenue_os.acquisition.xhs_full_collector --mode monthly
 
 前提条件：
-  - Chrome 已登录 creator.xiaohongshu.com 和 ark.xiaohongshu.com
-  - opencli daemon 运行中（opencli doctor 确认）
+  - Chrome Tab: creator.xiaohongshu.com（已登录）
+  - Chrome Tab: ark.xiaohongshu.com（已登录）
+  - opencli daemon 运行中（opencli doctor 确认，Browser Bridge Connected）
   - Apple 事件 JS 权限已开启（Chrome 菜单→查看→开发者→允许 Apple 事件中的 JavaScript）
+
+已知限制（2026-03-31 验证）：
+  - 千帆图表全为 SVG 路径渲染（非 canvas，非 SVG text），DOM 无数值
+  - 有数值的数据全在 innerText 里（成交/流量/商品/搜索等页面）
+  - 人群画像（性别/年龄/地域）= 纯 SVG 图表，需手动从千帆导出 PDF
+  - AINRL 用户资产漏斗在 /app-promotion/user-assets 的 innerText 可直接采集
+  - 成交分析子 tab（载体/账号/人群构成）为懒加载 SVG，点击后仍无 DOM 数值
 """
 from __future__ import annotations
 
