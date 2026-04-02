@@ -9,6 +9,7 @@ from revenue_os.specialists.conversion_doctor import build_conversion_interventi
 from revenue_os.specialists.repurchase import build_repurchase_interventions
 from revenue_os.specialists.search_positioning import build_search_interventions
 from revenue_os.knowledge.kb_retriever import retrieve_for_mission
+from revenue_os.planning.action_ranker import rank_actions
 
 
 CANONICAL_METRICS_BY_MISSION = {
@@ -116,18 +117,50 @@ def _decorate(actions: list[dict[str, Any]], evidence_refs: list[dict[str, Any]]
 def _actions_for_mission(mission_type: str, state: dict[str, Any]) -> list[dict[str, Any]]:
     evidence_refs = state.get("evidence_summary", [])
     if mission_type == "conversion_repair":
-        return build_conversion_interventions(state)
-    if mission_type == "search_positioning":
-        return build_search_interventions(state)
-    if mission_type == "repurchase_activation":
-        return build_repurchase_interventions(state)
-    if mission_type == "aov_lift":
-        return _decorate(AOV_INTERVENTIONS, evidence_refs)
-    if mission_type == "content_formula_scaling":
-        return _decorate(CONTENT_INTERVENTIONS, evidence_refs)
-    if mission_type == "data_repair":
-        return _decorate(DATA_REPAIR_INTERVENTIONS, evidence_refs)
-    return _decorate(AUDIT_INTERVENTIONS, evidence_refs)
+        raw_actions = build_conversion_interventions(state)
+    elif mission_type == "search_positioning":
+        raw_actions = build_search_interventions(state)
+    elif mission_type == "repurchase_activation":
+        raw_actions = build_repurchase_interventions(state)
+    elif mission_type == "aov_lift":
+        raw_actions = _decorate(AOV_INTERVENTIONS, evidence_refs)
+    elif mission_type == "content_formula_scaling":
+        raw_actions = _decorate(CONTENT_INTERVENTIONS, evidence_refs)
+    elif mission_type == "data_repair":
+        raw_actions = _decorate(DATA_REPAIR_INTERVENTIONS, evidence_refs)
+    else:
+        raw_actions = _decorate(AUDIT_INTERVENTIONS, evidence_refs)
+
+    # 用 ActionRanker 按 Utility×Relevance/Effort^0.5 重排序
+    # 如果排序失败（缺少字段），fallback 到原始顺序
+    bottleneck_info: dict[str, Any] | None = None
+    bottleneck_metric = state.get("primary_bottleneck")
+    if bottleneck_metric:
+        bottleneck_info = {"primary_metric": bottleneck_metric}
+
+    user_state_for_rank = {
+        "primary_objective": state.get("brand_context", {}).get("primary_objective", "conversion"),
+        "metrics": state.get("metric_snapshot", {}),
+    }
+    try:
+        # rank_actions 期望输入是 KO形式；对 action 需要添加 triggering_metrics / applicable_action_families
+        rankable = []
+        for action in raw_actions:
+            ko_like = dict(action)
+            ko_like.setdefault("triggering_metrics", action.get("expected_metric_impact", []))
+            ko_like.setdefault("applicable_action_families", [action.get("action_family", "")])
+            ko_like.setdefault("score", 1.0)
+            rankable.append(ko_like)
+        ranked = rank_actions(rankable, user_state_for_rank, bottleneck_info)
+        # 还原 priority 字段为连续整数
+        for i, action in enumerate(ranked, start=1):
+            action["priority"] = i
+            action.pop("priority_score", None)
+            action.pop("utility", None)
+            action.pop("effort", None)
+        return ranked
+    except Exception:
+        return raw_actions
 
 
 def _infer_stage_from_state(state: dict[str, Any]) -> str:
