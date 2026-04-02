@@ -251,6 +251,52 @@ def parse_search_terms(xlsx_paths: list[Path]) -> list[dict[str, Any]]:
     return all_terms[:10]
 
 
+def derive_search_metrics(top_search_terms: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    从 top_search_terms 列表聊合模块级指标。
+    返回可直接并入 metrics_snapshot 的字典。
+    """
+    if not top_search_terms:
+        return {}
+
+    total_clicks = sum(t.get("clicks", 0) or 0 for t in top_search_terms)
+
+    # 加权均値 CTR
+    if total_clicks > 0:
+        search_ctr = sum(
+            (t.get("ctr", 0) or 0) * (t.get("clicks", 0) or 0)
+            for t in top_search_terms
+        ) / total_clicks
+    else:
+        ctrs = [t.get("ctr", 0) or 0 for t in top_search_terms]
+        search_ctr = sum(ctrs) / len(ctrs) if ctrs else 0.0
+
+    # 加权均値 purchase CVR
+    cvr_terms = [t for t in top_search_terms if t.get("purchase_cvr") is not None]
+    if cvr_terms:
+        total_cvr_clicks = sum(t.get("clicks", 1) or 1 for t in cvr_terms)
+        if total_cvr_clicks > 0:
+            search_purchase_cvr = sum(
+                (t.get("purchase_cvr", 0) or 0) * (t.get("clicks", 1) or 1)
+                for t in cvr_terms
+            ) / total_cvr_clicks
+        else:
+            search_purchase_cvr = sum(t.get("purchase_cvr", 0) or 0 for t in cvr_terms) / len(cvr_terms)
+    else:
+        search_purchase_cvr = 0.0
+
+    # Top-1：按成交金额排序
+    top_term = max(top_search_terms, key=lambda t: t.get("revenue", 0) or 0, default={})
+
+    return {
+        "search_ctr": round(search_ctr, 6),
+        "search_purchase_cvr": round(search_purchase_cvr, 6),
+        "search_top_term": top_term.get("term", ""),
+        "search_top_term_revenue": top_term.get("revenue", 0),
+        "search_term_count": len(top_search_terms),
+    }
+
+
 def infer_stage(monthly_gmv: float, monthly_orders: int = 0) -> str:
     """根据月GMV和订单量推断经营阶段"""
     if monthly_gmv < 3000 or monthly_orders < 10:
@@ -308,6 +354,8 @@ def run_etl(data_dir: Path | None = None) -> dict[str, Any]:
     monthly_orders = latest_tx.get("orders", 0)
     stage = infer_stage(monthly_gmv, monthly_orders)
 
+    search_derived = derive_search_metrics(search_terms)
+
     snapshot = {
         "snapshot_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "stage": stage,
@@ -318,6 +366,7 @@ def run_etl(data_dir: Path | None = None) -> dict[str, Any]:
             "shop_visit_to_pay_cvr": latest_tx.get("cvr", 0),
             "visitors": latest_tx.get("visitors", 0),
             "refund_rate": refund.get("latest_refund_rate", 0),
+            **search_derived,
         },
         "ainrl": {
             "a": ainrl.get("a", 0),

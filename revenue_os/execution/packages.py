@@ -130,6 +130,20 @@ def _actions_for_mission(mission_type: str, state: dict[str, Any]) -> list[dict[
     return _decorate(AUDIT_INTERVENTIONS, evidence_refs)
 
 
+def _infer_stage_from_state(state: dict[str, Any]) -> str:
+    """从 metric_snapshot 中反推阶段，避免直接依赖 brand_context 字段不存在时报错。"""
+    monthly_gmv = float(state.get("metric_snapshot", {}).get("monthly_gmv") or 0)
+    if monthly_gmv <= 0:
+        return "ramp_up"
+    if monthly_gmv < 3000:
+        return "cold_start"
+    if monthly_gmv < 30000:
+        return "ramp_up"
+    if monthly_gmv < 100000:
+        return "breakthrough"
+    return "daily_ops"
+
+
 def generate_execution_package(mission_id: str) -> dict[str, Any]:
     mission = read_artifact("mission_plan", mission_id)
     state = read_artifact("current_state", mission["state_id"])
@@ -173,6 +187,18 @@ def generate_execution_package(mission_id: str) -> dict[str, Any]:
         "kb_insights": retrieve_for_mission(
             mission_type,
             bottleneck=state.get("primary_bottleneck"),
+            user_state={
+                "stage": state.get("anomaly_gate", {}).get("planner_mode") or _infer_stage_from_state(state),
+                "industry": state.get("brand_context", {}).get("industry", "通用"),
+                "business_model": state.get("brand_context", {}).get("business_model", ["ecommerce"]),
+                "weak_metrics": [
+                    m["metric_name"]
+                    for m in state.get("stabilized_metric_summary", [])
+                    if m.get("sample_quality_status") in ("insufficient", "limited")
+                ],
+                "metrics": state.get("metric_snapshot", {}),
+                "inferred": {"industry_weights": {}},
+            },
             top_k=5,
         ),
         "trigger_post_ids": trigger_post_ids,

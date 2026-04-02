@@ -121,13 +121,48 @@ def _latest_state_after(start_state_id: str) -> str | None:
     return sorted(later, key=lambda item: item.get("created_at", ""))[-1]["state_id"]
 
 
+# AINRL 代理映射：ETL ainrl_*_cvr 字段 → 标准 metric 名
+_AINRL_PROXY_MAP: dict[str, list[str]] = {
+    "repurchase_rate":          ["ainrl_n_to_r_cvr"],
+    "deal_intent_to_new_cvr":  ["ainrl_i_to_n_cvr"],
+    "aipl_interest_to_new_cvr":["ainrl_i_to_n_cvr"],
+    "deal_new_to_returning_cvr": ["ainrl_n_to_r_cvr"],
+}
+
+
+def _lookup_metric_value(state: dict[str, Any], metric_name: str) -> float | None:
+    """多源查找指标值：metric_snapshot → ETL proxy 字段 → None"""
+    snapshot = state.get("metric_snapshot", {})
+    val = snapshot.get(metric_name)
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            pass
+    # 尝试代理字段
+    for proxy in _AINRL_PROXY_MAP.get(metric_name, []):
+        val = snapshot.get(proxy)
+        if val is not None:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def _metric_delta(start_state: dict[str, Any], end_state: dict[str, Any] | None, metric_name: str) -> float | None:
     if end_state is None:
         return None
-    start_value = start_state.get("metric_snapshot", {}).get(metric_name)
-    end_value = end_state.get("metric_snapshot", {}).get(metric_name)
-    if isinstance(start_value, (int, float)) and isinstance(end_value, (int, float)):
-        return round(end_value - start_value, 6)
+    start_value = _lookup_metric_value(start_state, metric_name)
+    end_value = _lookup_metric_value(end_state, metric_name)
+    # 避免拿到同一快照造成 delta≈0 的伪中性
+    start_snap = start_state.get("snapshot_id", "")
+    end_snap   = end_state.get("snapshot_id", "")
+    if start_snap and end_snap and start_snap == end_snap:
+        return None
+    if isinstance(start_value, float) and isinstance(end_value, float):
+        delta = round(end_value - start_value, 6)
+        return delta
     return None
 
 
@@ -202,6 +237,12 @@ def score_experiment(experiment_id: str, end_state_id: str | None = None) -> dic
         status, outcome = _legacy_outcome(completion, end_state, primary_delta)
         evidence_class = _evidence_class(outcome, sample_sufficiency, guardrail_pass)
 
+    # relative delta（付加，用于治理层判断商业幅度，不替换 Bayes 输入）
+    primary_relative_delta: float | None = None
+    start_primary = _lookup_metric_value(start_state, experiment["primary_metric"])
+    if primary_delta is not None and start_primary is not None and abs(start_primary) > 1e-9:
+        primary_relative_delta = round(primary_delta / abs(start_primary), 4)
+
     result = {
         "schema_version": "1.0.0",
         "object_type": "experiment_result",
@@ -212,6 +253,7 @@ def score_experiment(experiment_id: str, end_state_id: str | None = None) -> dic
         "outcome": outcome,
         "evidence_class": evidence_class,
         "metric_deltas": metric_deltas,
+        "primary_relative_delta": primary_relative_delta,
         "guardrail_deltas": guardrail_deltas,
         "guardrail_status": "pass" if guardrail_pass else "warning",
         "sample_sufficiency": sample_sufficiency,
