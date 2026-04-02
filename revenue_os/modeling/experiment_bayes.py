@@ -2,17 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from revenue_os.modeling.calibration import CALIBRATION_BUCKET
+from revenue_os.modeling.calibration import CALIBRATION_BUCKET, CALIBRATION_VERSION, get_min_effect
 
 
 def _min_effect(metric_name: str) -> float:
-    if metric_name in {"shop_visit_to_pay_cvr", "product_click_to_pay_cvr", "inquiry_to_pay_cvr", "repurchase_rate"}:
-        return 0.005
-    if metric_name == "refund_rate":
-        return 0.01
-    if metric_name == "aov":
-        return 10.0
-    return 1.0
+    """从校准注册表取 MDE，fallback 到内置规则。"""
+    return get_min_effect(metric_name)
 
 
 def _completion_weight(completion: dict[str, Any]) -> float:

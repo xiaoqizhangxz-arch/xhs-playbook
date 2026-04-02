@@ -5,7 +5,7 @@ from statistics import mean
 from typing import Any
 
 from revenue_os.foundation.config import DEFAULT_THRESHOLDS
-from revenue_os.modeling.calibration import calibration_ref
+from revenue_os.modeling.calibration import calibration_ref, get_prior
 
 
 STABILIZER_VERSION = "p0.eb.v1"
@@ -142,6 +142,11 @@ def apply_metric_stabilization(metrics: list[dict[str, Any]]) -> list[dict[str, 
         peer_family = _peer_family(name)
         pool_candidates = [] if peer_family == "no_pool_continuous" else family_values.get(peer_family, [])
         pool_mean = mean(pool_candidates) if len(pool_candidates) >= 2 else None
+        # 如果 peer pool 样本少，用校准文件的先验均値补4
+        if pool_mean is None:
+            prior = get_prior(name)
+            if prior.get("pool_mean") is not None:
+                pool_mean = float(prior["pool_mean"])
         floor, ceiling = _threshold_for_metric(name)
         alias_confidence = float((payload.get("metadata") or {}).get("alias_confidence", 1.0) or 1.0)
 

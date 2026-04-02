@@ -112,13 +112,56 @@ def complete_experiment(
     return completion
 
 
-def _latest_state_after(start_state_id: str) -> str | None:
+_MIN_WINDOW_HOURS = 24  # 实验窗口最短间隔（小时），低于此判为重复快照
+
+
+def _latest_state_after(start_state_id: str, min_window_hours: int = _MIN_WINDOW_HOURS) -> str | None:
+    """查找实验窗口后的 end_state，附加窗口对齐规则避免拿到重复快照。
+
+    规则：
+      1. 必须是不同 state_id
+      2. snapshot_id 不同（防止同一次采集被重复写入两次）
+      3. created_at 至少比 start 晚 min_window_hours 小时
+    """
+    import re
+    from datetime import datetime, timezone, timedelta
+
     start_state = read_artifact("current_state", start_state_id)
-    states = [read_json(path) for path in list_artifacts("current_state")]
-    later = [state for state in states if state.get("created_at", "") >= start_state.get("created_at", "") and state.get("state_id") != start_state_id]
-    if not later:
+    start_ts_raw = start_state.get("created_at", "")
+
+    # 解析起始时间
+    def _parse(ts: str) -> datetime | None:
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(timezone.utc)
+        except ValueError:
+            return None
+
+    start_dt = _parse(start_ts_raw)
+    min_dt = (start_dt + timedelta(hours=min_window_hours)) if start_dt else None
+    start_snapshot = start_state.get("snapshot_id", "")
+
+    candidates = []
+    for path in list_artifacts("current_state"):
+        try:
+            state = read_json(path)
+        except Exception:
+            continue
+        if state.get("state_id") == start_state_id:
+            continue
+        if state.get("snapshot_id") and state["snapshot_id"] == start_snapshot:
+            continue  # 同批次快照，skip
+        end_dt = _parse(state.get("created_at", ""))
+        if end_dt is None:
+            continue
+        if min_dt and end_dt < min_dt:
+            continue  # 窗口不足
+        candidates.append((end_dt, state["state_id"]))
+
+    if not candidates:
         return None
-    return sorted(later, key=lambda item: item.get("created_at", ""))[-1]["state_id"]
+    return sorted(candidates)[-1][1]  # 取最新的
 
 
 # AINRL 代理映射：ETL ainrl_*_cvr 字段 → 标准 metric 名
